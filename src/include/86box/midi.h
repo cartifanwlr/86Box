@@ -113,6 +113,7 @@ extern const device_t mt32_old_device;
 extern const device_t mt32_new_device;
 extern const device_t cm32l_device;
 extern const device_t cm32ln_device;
+extern const device_t lapci_device;
 #    endif
 #endif
 

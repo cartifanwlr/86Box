@@ -13,6 +13,8 @@
 #include <86box/rom.h>
 #include <86box/sound.h>
 #include <86box/ui.h>
+#include <86box/timer.h>
+#include <86box/snd_mpu401.h>
 #include <mt32emu/c_interface/c_interface.h>
 
 #define MT32_OLD_CTRL_ROM "roms/sound/mt32/MT32_CONTROL.ROM"
@@ -108,6 +110,11 @@ static const mt32emu_report_handler_i handler_cm32l = { &handler_cm32l_v0 };
 
 static mt32emu_context context         = NULL;
 static int             roms_present[2] = { -1, -1 };
+
+typedef struct lapci_t {
+    midi_device_t *cm32l;
+    mpu_t *mpu;
+} lapci_t;
 
 mt32emu_return_code
 mt32_check(UNUSED(const char *func), mt32emu_return_code ret, mt32emu_return_code expected)
@@ -344,6 +351,21 @@ cm32ln_init(UNUSED(const device_t *info))
     return mt32emu_init(CM32LN_CTRL_ROM, CM32LN_PCM_ROM);
 }
 
+void *
+lapci_init(UNUSED(const device_t *info))
+{
+    lapci_t *dev = (lapci_t *) malloc(sizeof(lapci_t));
+    memset(dev, 0, sizeof(lapci_t));
+
+    dev->cm32l = (midi_device_t *) cm32l_init(info);
+
+    dev->mpu = (mpu_t *) malloc(sizeof(mpu_t));
+    memset(dev->mpu, 0, sizeof(mpu_t));
+    mpu401_init(dev->mpu, device_get_config_hex16("base"), device_get_config_int("irq"), M_INTELLIGENT, device_get_config_int("recieve_input"));
+
+    return dev;
+}
+
 void
 mt32_close(void *priv)
 {
@@ -373,6 +395,15 @@ mt32_close(void *priv)
     if (buffer_int16)
         free(buffer_int16);
     buffer_int16 = NULL;
+}
+
+void
+lapci_close(void *priv)
+{
+    lapci_t *dev = (lapci_t *) priv;
+    mt32_close(dev->cm32l);
+
+    free(dev);
 }
 
 static const device_config_t mt32_config[] = {
@@ -419,8 +450,154 @@ static const device_config_t mt32_config[] = {
   // clang-format on
 };
 
+static const device_config_t lapci_config[] = {
+  // clang-format off
+    {
+        .name = "output_gain",
+        .description = "Output Gain",
+        .type = CONFIG_SPINNER,
+        .spinner = {
+            .min = 0,
+            .max = 100
+        },
+        .default_int = 100
+    },
+    {
+        .name = "reverb",
+        .description = "Reverb",
+        .type = CONFIG_BINARY,
+        .default_int = 1
+    },
+    {
+        .name = "reverb_output_gain",
+        .description = "Reverb Output Gain",
+        .type = CONFIG_SPINNER,
+        .spinner = {
+            .min = 0,
+            .max = 100
+        },
+        .default_int = 100
+    },
+    {
+        .name = "reversed_stereo",
+        .description = "Reversed stereo",
+        .type = CONFIG_BINARY,
+        .default_int = 0
+    },
+    {
+        .name = "nice_ramp",
+        .description = "Nice ramp",
+        .type = CONFIG_BINARY,
+        .default_int = 1
+    },
+    {
+        .name = "base",
+        .description = "MPU-401 Address",
+        .type = CONFIG_HEX16,
+        .default_string = "",
+        .default_int = 0x330,
+        .file_filter = "",
+        .spinner = { 0 },
+        .selection = {
+            {
+                .description = "0x220",
+                .value = 0x220
+            },
+            {
+                .description = "0x230",
+                .value = 0x230
+            },
+            {
+                .description = "0x240",
+                .value = 0x240
+            },
+            {
+                .description = "0x250",
+                .value = 0x250
+            },
+            {
+                .description = "0x300",
+                .value = 0x300
+            },
+            {
+                .description = "0x320",
+                .value = 0x320
+            },
+            {
+                .description = "0x330",
+                .value = 0x330
+            },
+            {
+                .description = "0x332",
+                .value = 0x332
+            },
+            {
+                .description = "0x334",
+                .value = 0x334
+            },
+            {
+                .description = "0x336",
+                .value = 0x336
+            },
+            {
+                .description = "0x340",
+                .value = 0x340
+            },
+            {
+                .description = "0x350",
+                .value = 0x350
+            },
+            { .description = "" }
+        }
+    },
+    {
+        .name = "irq",
+        .description = "MPU-401 IRQ",
+        .type = CONFIG_SELECTION,
+        .default_string = "",
+        .default_int = 2,
+        .file_filter = "",
+        .spinner = { 0 },
+        .selection = {
+            {
+                .description = "IRQ 2",
+                .value = 2
+            },
+            {
+                .description = "IRQ 3",
+                .value = 3
+            },
+            {
+                .description = "IRQ 4",
+                .value = 4
+            },
+            {
+                .description = "IRQ 5",
+                .value = 5
+            },
+            {
+                .description = "IRQ 6",
+                .value = 6
+            },
+            {
+                .description = "IRQ 7",
+                .value = 7
+            },
+            { .description = "" }
+        }
+    },
+    {
+        .name = "receive_input",
+        .description = "Receive input",
+        .type = CONFIG_BINARY,
+        .default_int = 0
+    },
+    { .name = "", .description = "", .type = CONFIG_END }
+  // clang-format on
+};
+
 const device_t mt32_old_device = {
-    .name          = "Roland MT-32 Emulation",
+    .name          = "Roland MT-32",
     .internal_name = "mt32",
     .flags         = 0,
     .local         = 0,
@@ -434,7 +611,7 @@ const device_t mt32_old_device = {
 };
 
 const device_t mt32_new_device = {
-    .name          = "Roland MT-32 (New) Emulation",
+    .name          = "Roland MT-32 (New)",
     .internal_name = "mt32",
     .flags         = 0,
     .local         = 0,
@@ -448,7 +625,7 @@ const device_t mt32_new_device = {
 };
 
 const device_t cm32l_device = {
-    .name          = "Roland CM-32L Emulation",
+    .name          = "Roland CM-32L",
     .internal_name = "cm32l",
     .flags         = 0,
     .local         = 0,
@@ -462,7 +639,7 @@ const device_t cm32l_device = {
 };
 
 const device_t cm32ln_device = {
-    .name          = "Roland CM-32LN Emulation",
+    .name          = "Roland CM-32LN",
     .internal_name = "cm32ln",
     .flags         = 0,
     .local         = 0,
@@ -473,4 +650,18 @@ const device_t cm32ln_device = {
     .speed_changed = NULL,
     .force_redraw  = NULL,
     .config        = mt32_config
+};
+
+const device_t lapci_device = {
+    .name          = "Roland LAPC-I",
+    .internal_name = "lapci",
+    .flags         = DEVICE_ISA,
+    .local         = 0,
+    .init          = lapci_init,
+    .close         = lapci_close,
+    .reset         = NULL,
+    { .available = cm32l_available },
+    .speed_changed = NULL,
+    .force_redraw  = NULL,
+    .config        = lapci_config
 };

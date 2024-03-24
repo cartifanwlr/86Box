@@ -63,6 +63,7 @@
 #define ROM_PHOENIX_TRIO64             "roms/video/s3/86c764x1.bin"
 #define ROM_DIAMOND_STEALTH64_764      "roms/video/s3/stealt64.bin"
 #define ROM_TRIO64V2_DX_VBE20          "roms/video/s3/86c775_2.bin"
+#define ROM_STB_POWERGRAPH_64_VIDEO    "roms/video/s3/VBIOS.BIN"
 #define ROM_PHOENIX_TRIO64VPLUS        "roms/video/s3/64V1506.ROM"
 #define ROM_CARDEX_TRIO64VPLUS         "roms/video/s3/S3T64VP.VBI"
 #define ROM_DIAMOND_STEALTH_SE         "roms/video/s3/DiamondStealthSE.VBI"
@@ -94,6 +95,7 @@ enum {
     S3_AMI_86C924,
     S3_TRIO64V2_DX,
     S3_TRIO64V2_DX_ONBOARD,
+    S3_STB_POWERGRAPH_64_VIDEO,
     S3_PHOENIX_TRIO64VPLUS,
     S3_PHOENIX_TRIO64VPLUS_ONBOARD,
     S3_CARDEX_TRIO64VPLUS,
@@ -2126,8 +2128,8 @@ s3_vblank_start(svga_t *svga)
 static uint32_t
 s3_hwcursor_convert_addr(svga_t *svga)
 {
-    if ((svga->bpp == 8) && ((svga->gdcreg[5] & 0x60) >= 0x20) && (svga->crtc[0x45] & 0x10)) {
-        if ((svga->gdcreg[5] & 0x60) >= 0x40)
+    if ((svga->bpp == 8) && (((svga->gdcreg[5] & 0x60) == 0x20) || (svga->crtc[0x3a] & 0x10)) && (svga->crtc[0x45] & 0x10)) {
+        if (svga->crtc[0x3a] & 0x10)
             return ((svga->hwcursor_latch.addr & 0xfffff1ff) | ((svga->hwcursor_latch.addr & 0x200) << 2)) | 0x600;
         else if ((svga->gdcreg[5] & 0x60) == 0x20)
             return ((svga->hwcursor_latch.addr & 0xfffff0ff) | ((svga->hwcursor_latch.addr & 0x300) << 2)) | 0x300;
@@ -3079,7 +3081,8 @@ s3_in(uint16_t addr, void *priv)
                 temp = svga->seqregs[svga->seqaddr];
                 /* This is needed for the Intel Advanced/ATX's built-in S3 Trio64V+ BIOS to not
                    get stuck in an infinite loop. */
-                if (((s3->card_type == S3_PHOENIX_TRIO64VPLUS_ONBOARD) ||
+                if (((s3->card_type == S3_STB_POWERGRAPH_64_VIDEO) ||
+                    (s3->card_type == S3_PHOENIX_TRIO64VPLUS_ONBOARD) ||
                     (s3->card_type == S3_CARDEX_TRIO64VPLUS)) && (svga->seqaddr == 0x17))
                     svga->seqregs[svga->seqaddr] ^= 0x01;
                 return temp;
@@ -3214,7 +3217,6 @@ s3_recalctimings(svga_t *svga)
     }
 
     svga->hdisp = svga->hdisp_old;
-
     svga->ma_latch |= (s3->ma_ext << 16);
 
     if (s3->chip >= S3_86C928) {
@@ -3222,7 +3224,7 @@ s3_recalctimings(svga_t *svga)
             svga->htotal |= 0x100;
         if (svga->crtc[0x5d] & 0x02) {
             svga->hdisp_time |= 0x100;
-            svga->hdisp |= 0x100 * svga->dots_per_clock;
+            svga->hdisp |= (0x100 * svga->dots_per_clock);
         }
         if (svga->crtc[0x5e] & 0x01)
             svga->vtotal |= 0x400;
@@ -3312,7 +3314,7 @@ s3_recalctimings(svga_t *svga)
     if (svga->crtc[0x33] & 0x20) {
         /* The S3 version of the Cirrus' special blanking mode, with identical behavior. */
         svga->hblankstart = (((svga->crtc[0x5d] & 0x02) >> 1) << 8) + svga->crtc[1]/* +
-                            ((svga->crtc[3] >> 5) & 3)*/ + 1;
+                            ((svga->crtc[3] >> 5) & 3) + 1*/;
         svga->hblank_end_val = svga->htotal - 1 /* + ((svga->crtc[3] >> 5) & 3)*/;
 
         svga->monitor->mon_overscan_y = 0;
@@ -3324,7 +3326,7 @@ s3_recalctimings(svga_t *svga)
         if (s3->chip >= S3_VISION964)
             svga->hblank_end_mask  = 0x7f;
     } else if (s3->chip >= S3_86C801) {
-        svga->hblankstart    = (((svga->crtc[0x5d] & 0x04) >> 2) << 8) + svga->crtc[2] + 1;
+        svga->hblankstart    = (((svga->crtc[0x5d] & 0x04) >> 2) << 8) + svga->crtc[2];
 
         if (s3->chip >= S3_VISION964) {
             /* NOTE: The S3 Trio64V+ datasheet says this is bit 7, but then where is bit 6?
@@ -3442,8 +3444,13 @@ s3_recalctimings(svga_t *svga)
                         break;
                     case S3_VISION968:
                         switch (s3->card_type) {
-                            case S3_PHOENIX_VISION968:
+                            case S3_MIROVIDEO40SV_ERGO_968:
+                                if (svga->hdisp == 832)
+                                    svga->hdisp -= 32;
+                                break;
                             case S3_NUMBER9_9FX_771:
+                            case S3_PHOENIX_VISION968:
+                            case S3_SPEA_MERCURY_P64V:
                                 svga->hdisp <<= 1;
                                 svga->dots_per_clock <<= 1;
                                 if (svga->hdisp == 832)
@@ -3619,8 +3626,13 @@ s3_recalctimings(svga_t *svga)
                         break;
                     case S3_VISION968:
                         switch (s3->card_type) {
+                            case S3_MIROVIDEO40SV_ERGO_968:
+                                if (svga->hdisp == 832)
+                                    svga->hdisp -= 32;
+                                break;
                             case S3_NUMBER9_9FX_771:
                             case S3_PHOENIX_VISION968:
+                            case S3_SPEA_MERCURY_P64V:
                                 svga->hdisp <<= 1;
                                 svga->dots_per_clock <<= 1;
                                 /* TODO: Is this still needed? */
@@ -3801,8 +3813,13 @@ s3_recalctimings(svga_t *svga)
                         break;
                     case S3_VISION968:
                         switch (s3->card_type) {
+                            case S3_MIROVIDEO40SV_ERGO_968:
+                                if (svga->hdisp == 832)
+                                    svga->hdisp -= 32;
+                                break;
                             case S3_NUMBER9_9FX_771:
                             case S3_PHOENIX_VISION968:
+                            case S3_SPEA_MERCURY_P64V:
                                 svga->hdisp <<= 1;
                                 svga->dots_per_clock <<= 1;
                                 /* TODO: Is this still needed? */
@@ -4003,8 +4020,13 @@ s3_recalctimings(svga_t *svga)
                         break;
                     case S3_VISION968:
                         switch (s3->card_type) {
+                            case S3_MIROVIDEO40SV_ERGO_968:
+                                if (svga->hdisp == 832)
+                                    svga->hdisp -= 32;
+                                break;
                             case S3_NUMBER9_9FX_771:
                             case S3_PHOENIX_VISION968:
+                            case S3_SPEA_MERCURY_P64V:
                                 svga->hdisp <<= 1;
                                 svga->dots_per_clock <<= 1;
                                 /* TODO: Is this still needed? */
@@ -4093,6 +4115,11 @@ s3_recalctimings(svga_t *svga)
             }
         }
     }
+
+    if ((s3->chip == S3_TRIO32) || (s3->chip == S3_TRIO64))
+        svga->hoverride = 1;
+    else
+        svga->hoverride = 0;
 }
 
 static void
@@ -4160,7 +4187,7 @@ s3_trio64v_recalctimings(svga_t *svga)
     if ((svga->crtc[0x33] & 0x20) || ((svga->crtc[0x67] & 0xc) == 0xc)) {
         /* The S3 version of the Cirrus' special blanking mode, with identical behavior. */
         svga->hblankstart = (((svga->crtc[0x5d] & 0x02) >> 1) << 8) + svga->crtc[1]/* +
-                            ((svga->crtc[3] >> 5) & 3)*/ + 1;
+                            ((svga->crtc[3] >> 5) & 3)*/;
         svga->hblank_end_val = svga->htotal - 1 /* + ((svga->crtc[3] >> 5) & 3)*/;
 
         svga->monitor->mon_overscan_y = 0;
@@ -4169,7 +4196,7 @@ s3_trio64v_recalctimings(svga_t *svga)
         /* Also make sure vertical blanking starts on display end. */
         svga->vblankstart = svga->dispend;
     } else {
-        svga->hblankstart    = (((svga->crtc[0x5d] & 0x04) >> 2) << 8) + svga->crtc[2] + 1;
+        svga->hblankstart    = (((svga->crtc[0x5d] & 0x04) >> 2) << 8) + svga->crtc[2];
 
         /* NOTE: The S3 Trio64V+ datasheet says this is bit 7, but then where is bit 6?
                  The datasheets for the pre-Trio64V+ cards say +64, which implies bit 6,
@@ -4271,6 +4298,8 @@ s3_trio64v_recalctimings(svga_t *svga)
                 break;
         }
     }
+
+    svga->hoverride = 1;
 }
 
 static void
@@ -9452,6 +9481,7 @@ s3_reset(void *priv)
 
         case S3_PHOENIX_TRIO64:
         case S3_PHOENIX_TRIO64_ONBOARD:
+        case S3_STB_POWERGRAPH_64_VIDEO:
         case S3_CARDEX_TRIO64VPLUS:
         case S3_PHOENIX_TRIO64VPLUS:
         case S3_PHOENIX_TRIO64VPLUS_ONBOARD:
@@ -9690,6 +9720,14 @@ s3_init(const device_t *info)
         case S3_PHOENIX_TRIO64_ONBOARD:
             bios_fn = NULL;
             chip    = S3_TRIO64;
+            if (info->flags & DEVICE_PCI)
+                video_inform(VIDEO_FLAG_TYPE_SPECIAL, &timing_s3_trio64_pci);
+            else
+                video_inform(VIDEO_FLAG_TYPE_SPECIAL, &timing_s3_trio64_vlb);
+            break;
+        case S3_STB_POWERGRAPH_64_VIDEO:
+            bios_fn = ROM_STB_POWERGRAPH_64_VIDEO;
+            chip    = S3_TRIO64V;
             if (info->flags & DEVICE_PCI)
                 video_inform(VIDEO_FLAG_TYPE_SPECIAL, &timing_s3_trio64_pci);
             else
@@ -9964,14 +10002,14 @@ s3_init(const device_t *info)
         case S3_SPEA_MIRAGE_86C801:
         case S3_SPEA_MIRAGE_86C805:
             svga->decode_mask = (2 << 20) - 1;
-            stepping          = 0xa0; /*86C801/86C805*/
+            stepping          = 0xa2; /*86C801/86C805*/
             s3->id            = stepping;
             s3->id_ext        = stepping;
             s3->id_ext_pci    = 0;
             s3->packed_mmio   = 0;
             svga->crtc[0x5a]  = 0x0a;
 
-            svga->ramdac    = device_add(&att490_ramdac_device);
+            svga->ramdac    = device_add(&att491_ramdac_device);
             svga->clock_gen = device_add(&av9194_device);
             svga->getclock  = av9194_getclock;
             break;
@@ -10155,6 +10193,7 @@ s3_init(const device_t *info)
 
         case S3_PHOENIX_TRIO64:
         case S3_PHOENIX_TRIO64_ONBOARD:
+        case S3_STB_POWERGRAPH_64_VIDEO:
         case S3_PHOENIX_TRIO64VPLUS:
         case S3_PHOENIX_TRIO64VPLUS_ONBOARD:
         case S3_CARDEX_TRIO64VPLUS:
@@ -10392,6 +10431,12 @@ static int
 s3_phoenix_trio64_available(void)
 {
     return rom_present(ROM_PHOENIX_TRIO64);
+}
+
+static int
+s3_stb_powergraph_64_video_available(void)
+{
+    return rom_present(ROM_STB_POWERGRAPH_64_VIDEO);
 }
 
 static int
@@ -11035,6 +11080,20 @@ const device_t s3_phoenix_trio64_pci_device = {
     .speed_changed = s3_speed_changed,
     .force_redraw  = s3_force_redraw,
     .config        = s3_standard_config
+};
+
+const device_t s3_stb_powergraph_64_video_vlb_device = {
+    .name          = "S3 Trio64V+ (STB PowerGraph 64 Video) VLB",
+    .internal_name = "stb_trio64vplus_vlb",
+    .flags         = DEVICE_VLB,
+    .local         = S3_STB_POWERGRAPH_64_VIDEO,
+    .init          = s3_init,
+    .close         = s3_close,
+    .reset         = s3_reset,
+    { .available = s3_stb_powergraph_64_video_available },
+    .speed_changed = s3_speed_changed,
+    .force_redraw  = s3_force_redraw,
+    .config        = s3_phoenix_trio32_config
 };
 
 const device_t s3_phoenix_trio64vplus_onboard_pci_device = {

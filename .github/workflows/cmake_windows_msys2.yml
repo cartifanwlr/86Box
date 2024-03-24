@@ -63,8 +63,7 @@ jobs:
             slug: -Qt
             packages: >-
               qt5-static:p
-#              qt5-base:p
-#              qt5-tools:p
+              vulkan-headers:p
         environment:
 #          - msystem: MSYS
 #            toolchain: ./cmake/flags-gcc-x86_64.cmake
@@ -104,7 +103,6 @@ jobs:
             rtmidi:p
             libslirp:p
             fluidsynth:p
-            libvncserver:p
             ${{ matrix.ui.packages }}
 
       - name: Checkout repository

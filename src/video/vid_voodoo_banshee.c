@@ -510,6 +510,9 @@ banshee_render_16bpp_tiled(svga_t *svga)
     else
         addr = banshee->desktop_addr + (banshee->desktop_y & 31) * 128 + ((banshee->desktop_y >> 5) * banshee->desktop_stride_tiled);
 
+    if (addr >= svga->vram_max)
+        return;
+
     for (int x = 0; x <= svga->hdisp; x += 64) {
         if (svga->hwcursor_on || svga->overlay_on)
             svga->changedvram[addr >> 12] = 2;
@@ -558,10 +561,10 @@ banshee_recalctimings(svga_t *svga)
            that is, no overscan and relying on display end to blank. */
         if (banshee->vgaInit0 & 0x40) {
             svga->hblankstart     = svga->crtc[1]/* + ((svga->crtc[3] >> 5) & 3)*/ +
-                                   (((svga->crtc[0x1a] & 0x04) >> 2) << 8) + 1;
+                                   (((svga->crtc[0x1a] & 0x04) >> 2) << 8);
             svga->hblank_end_mask = 0x0000007f;
         } else {
-            svga->hblankstart     = svga->crtc[1]/* + ((svga->crtc[3] >> 5) & 3)*/ + 1;
+            svga->hblankstart     = svga->crtc[1]/* + ((svga->crtc[3] >> 5) & 3)*/;
             svga->hblank_end_mask = 0x0000003f;
         }
         svga->hblank_end_val = svga->htotal - 1 /* + ((svga->crtc[3] >> 5) & 3)*/;
@@ -579,12 +582,12 @@ banshee_recalctimings(svga_t *svga)
         svga->linedbl     = 0;
      } else {
         if (banshee->vgaInit0 & 0x40) {
-            svga->hblankstart     = (((svga->crtc[0x1a] & 0x10) >> 4) << 8) + svga->crtc[2] + 1;
+            svga->hblankstart     = (((svga->crtc[0x1a] & 0x10) >> 4) << 8) + svga->crtc[2];
             svga->hblank_end_val  = (svga->crtc[3] & 0x1f) | (((svga->crtc[5] & 0x80) >> 7) << 5) |
                                     (((svga->crtc[0x1a] & 0x20) >> 5) << 6);
             svga->hblank_end_mask = 0x0000007f;
         } else {
-            svga->hblankstart     =  svga->crtc[2] + 1;
+            svga->hblankstart     =  svga->crtc[2];
             svga->hblank_end_val  =  (svga->crtc[3] & 0x1f) | (((svga->crtc[5] & 0x80) >> 7) << 5);
             svga->hblank_end_mask =  0x0000003f;
         }
@@ -652,9 +655,6 @@ banshee_recalctimings(svga_t *svga)
 
         if (banshee->vidProcCfg & VIDPROCCFG_2X_MODE) {
             svga->hdisp *= 2;
-            // svga->htotal *= 2;
-            // svga->hblankstart *= 2;
-            // svga->hblank_end_val *= 2;
             svga->dots_per_clock *= 2;
         }
 

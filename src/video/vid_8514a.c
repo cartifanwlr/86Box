@@ -914,7 +914,7 @@ ibm8514_accel_out(uint16_t port, uint32_t val, svga_t *svga, int len)
                 if (!(port & 1)) {
                     if (((dev->disp_cntl & 0x60) == 0x20) || (((dev->disp_cntl & 0x60) == 0x40) && !(dev->accel.advfunc_cntl & 0x04))) {
                         dev->hsync_start = val;
-                        dev->hblankstart = (dev->hsync_start & 0x07) + 1;
+                        dev->hblankstart = (dev->hsync_start & 0x07);
                     }
                 }
                 ibm8514_log("IBM 8514/A: H_SYNC_STRT write 0AE8 = %d\n", val + 1);
@@ -4454,7 +4454,7 @@ ibm8514_init(const device_t *info)
     }
 #endif
 
-    timer_add(&svga->timer8514, ibm8514_poll, svga, 0);
+    timer_add(&svga->timer8514, ibm8514_poll, svga, 1);
 
     return svga;
 }

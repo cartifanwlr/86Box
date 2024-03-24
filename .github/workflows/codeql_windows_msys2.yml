@@ -61,9 +61,6 @@ jobs:
             new: on
             slug: -NDR
         ui:
-          - name: Win32 GUI
-            qt: off
-            static: on
           - name: Qt GUI
             qt: on
             static: off
@@ -71,6 +68,7 @@ jobs:
             packages: >-
               qt5-base:p
               qt5-tools:p
+              vulkan-headers:p
         environment:
 #          - msystem: MSYS
 #            toolchain: ./cmake/flags-gcc-x86_64.cmake
@@ -110,7 +108,6 @@ jobs:
             rtmidi:p
             libslirp:p
             fluidsynth:p
-            libvncserver:p
             ${{ matrix.ui.packages }}
 
       - name: Checkout repository

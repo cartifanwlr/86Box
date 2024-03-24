@@ -1750,7 +1750,7 @@ gd54xx_recalctimings(svga_t *svga)
     uint8_t         rdmask;
     uint8_t         linedbl = svga->dispend * 9 / 10 >= svga->hdisp;
 
-    svga->hblankstart = svga->crtc[2] + 1;
+    svga->hblankstart = svga->crtc[2];
 
     if (svga->crtc[0x1b] & ((svga->crtc[0x27] >= CIRRUS_ID_CLGD5424) ? 0xa0 : 0x20)) {
         /* Special blanking mode: the blank start and end become components of the window generator,
@@ -1763,7 +1763,7 @@ gd54xx_recalctimings(svga_t *svga)
         svga->hblank_end_mask = 0x000000ff;
 
         if (svga->crtc[0x1b] & 0x20) {
-            svga->hblankstart = svga->crtc[1]/* + ((svga->crtc[3] >> 5) & 3)*/ + 1;
+            svga->hblankstart = svga->crtc[1]/* + ((svga->crtc[3] >> 5) & 3) + 1*/;
             svga->hblank_end_val = svga->htotal - 1 /* + ((svga->crtc[3] >> 5) & 3)*/;
 
             /* In this mode, the dots per clock are always 8 or 16, never 9 or 18. */
@@ -4132,7 +4132,11 @@ gd54xx_init(const device_t *info)
             break;
 
         case CIRRUS_ID_CLGD5436:
-            romfn = BIOS_GD5436_PATH;
+            if (info->local & 0x200) {
+                romfn            = NULL;
+                gd54xx->has_bios = 0;
+            } else
+                romfn = BIOS_GD5436_PATH;
             break;
 
         case CIRRUS_ID_CLGD5430:
@@ -5143,6 +5147,20 @@ const device_t gd5434_pci_device = {
     .close         = gd54xx_close,
     .reset         = gd54xx_reset,
     { .available = gd5434_available },
+    .speed_changed = gd54xx_speed_changed,
+    .force_redraw  = gd54xx_force_redraw,
+    .config        = gd5434_config
+};
+
+const device_t gd5436_onboard_pci_device = {
+    .name          = "Cirrus Logic GD5436 (PCI) (On-Board)",
+    .internal_name = "cl_gd5436_onboard_pci",
+    .flags         = DEVICE_PCI,
+    .local         = CIRRUS_ID_CLGD5436 | 0x200,
+    .init          = gd54xx_init,
+    .close         = gd54xx_close,
+    .reset         = gd54xx_reset,
+    { .available = NULL },
     .speed_changed = gd54xx_speed_changed,
     .force_redraw  = gd54xx_force_redraw,
     .config        = gd5434_config

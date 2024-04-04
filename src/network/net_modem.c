@@ -1550,20 +1550,25 @@ static const device_config_t modem_config[] = {
         .file_filter = NULL,
         .spinner = { 0 },
         .selection = {
-            { .description = "115200", .value = 115200 },
-            { .description =  "57600", .value =  57600 },
-            { .description =  "56000", .value =  56000 },
+            { .description = "230400", .value = 230400 }, /* V.90 + V.42bis */
+            { .description = "115200", .value = 115200 }, /* V.34 + V.42bis */
+            { .description =  "57600", .value =  57600 }, /* V.32bis + V.42bis */
+            { .description =  "56000", .value =  56000 }, /* V.90 */
             { .description =  "38400", .value =  38400 },
-            { .description =  "19200", .value =  19200 },
-            { .description =  "14400", .value =  14400 },
-            { .description =   "9600", .value =   9600 },
-            { .description =   "7200", .value =   7200 },
-            { .description =   "4800", .value =   4800 },
-            { .description =   "2400", .value =   2400 },
+            { .description =  "33600", .value =  33600 }, /* V.34+ */
+            { .description =  "31200", .value =  31200 }, /* V.34+ */
+            { .description =  "28800", .value =  28800 }, /* V.34 */
+            { .description =  "24000", .value =  24000 }, /* V.34 */
+            { .description =  "19200", .value =  19200 }, /* V.34 */
+            { .description =  "14400", .value =  14400 }, /* V.32bis */
+            { .description =   "9600", .value =   9600 }, /* V.29 */
+            { .description =   "7200", .value =   7200 }, /* V.29 */
+            { .description =   "4800", .value =   4800 }, /* V.27ter */
+            { .description =   "2400", .value =   2400 }, /* V.22bis */
             { .description =   "1800", .value =   1800 },
-            { .description =   "1200", .value =   1200 },
-            { .description =    "600", .value =    600 },
-            { .description =    "300", .value =    300 },
+            { .description =   "1200", .value =   1200 }, /* V.22 */
+            { .description =    "600", .value =    600 }, /* V.22 */
+            { .description =    "300", .value =    300 }, /* V.21 */
         }
     },
     {

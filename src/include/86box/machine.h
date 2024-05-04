@@ -703,6 +703,7 @@ extern int machine_at_presario2240_init(const machine_t *);
 extern int machine_at_presario4500_init(const machine_t *);
 extern int machine_at_p55va_init(const machine_t *);
 extern int machine_at_brio80xx_init(const machine_t *);
+extern int machine_at_ergoe452_init(const machine_t *);
 extern int machine_at_pb680_init(const machine_t *);
 extern int machine_at_pb810_init(const machine_t *);
 extern int machine_at_mb520n_init(const machine_t *);

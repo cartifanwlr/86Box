@@ -93,6 +93,7 @@ typedef struct mach64_t {
 
     int type;
     int pci;
+    int is_onboard;
 
     uint8_t pci_slot;
     uint8_t irq_state;
@@ -4362,14 +4363,16 @@ mach64_pci_write(UNUSED(int func), int addr, uint8_t val, void *priv)
         case 0x30:
         case 0x32:
         case 0x33:
-            mach64->pci_regs[addr] = val;
-            if (mach64->pci_regs[0x30] & 0x01) {
-                uint32_t addr = (mach64->pci_regs[0x32] << 16) | (mach64->pci_regs[0x33] << 24);
-                mach64_log("Mach64 bios_rom enabled at %08x\n", addr);
-                mem_mapping_set_addr(&mach64->bios_rom.mapping, addr, 0x8000);
-            } else {
-                mach64_log("Mach64 bios_rom disabled\n");
-                mem_mapping_disable(&mach64->bios_rom.mapping);
+            if (!(mach64->is_onboard)){
+                mach64->pci_regs[addr] = val;
+                if (mach64->pci_regs[0x30] & 0x01) {
+                    uint32_t addr = (mach64->pci_regs[0x32] << 16) | (mach64->pci_regs[0x33] << 24);
+                    mach64_log("Mach64 bios_rom enabled at %08x\n", addr);
+                    mem_mapping_set_addr(&mach64->bios_rom.mapping, addr, 0x8000);
+                } else {
+                    mach64_log("Mach64 bios_rom disabled\n");
+                    mem_mapping_disable(&mach64->bios_rom.mapping);
+                }
             }
             return;
 
@@ -4401,6 +4404,8 @@ mach64_common_init(const device_t *info)
 
     svga = &mach64->svga;
 
+    mach64->is_onboard = info->local;
+
     mach64->vram_size = device_get_config_int("memory");
     mach64->vram_mask = (mach64->vram_size << 20) - 1;
 
@@ -4419,12 +4424,22 @@ mach64_common_init(const device_t *info)
 
     mach64_io_set(mach64);
 
-    if (info->flags & DEVICE_PCI)
-        pci_add_card(PCI_ADD_NORMAL, mach64_pci_read, mach64_pci_write, mach64, &mach64->pci_slot);
+    if (info->flags & DEVICE_PCI){
+        if (mach64->is_onboard)
+            pci_add_card(PCI_ADD_VIDEO, mach64_pci_read, mach64_pci_write, mach64, &mach64->pci_slot);
+        else
+            pci_add_card(PCI_ADD_NORMAL, mach64_pci_read, mach64_pci_write, mach64, &mach64->pci_slot);
+    }
+        
 
     mach64->pci_regs[PCI_REG_COMMAND] = 3;
     mach64->pci_regs[0x30]            = 0x00;
-    mach64->pci_regs[0x32]            = 0x0c;
+
+    if (mach64->is_onboard)
+        mach64->pci_regs[0x32]        = 0x00;
+    else 
+        mach64->pci_regs[0x32]        = 0x0c;
+
     mach64->pci_regs[0x33]            = 0x00;
 
     svga->ramdac            = device_add(&ati68860_ramdac_device);
@@ -4497,7 +4512,8 @@ mach64vt2_init(const device_t *info)
 
     ati_eeprom_load(&mach64->eeprom, "mach64vt.nvr", 1);
 
-    rom_init(&mach64->bios_rom, BIOS_ROMVT2_PATH, 0xc0000, 0x8000, 0x7fff, 0, MEM_MAPPING_EXTERNAL);
+    if (!(mach64->is_onboard))
+        rom_init(&mach64->bios_rom, BIOS_ROMVT2_PATH, 0xc0000, 0x8000, 0x7fff, 0, MEM_MAPPING_EXTERNAL);
 
     mem_mapping_disable(&mach64->bios_rom.mapping);
 
@@ -4659,6 +4675,20 @@ const device_t mach64vt2_device = {
     .internal_name = "mach64vt2",
     .flags         = DEVICE_PCI,
     .local         = 0,
+    .init          = mach64vt2_init,
+    .close         = mach64_close,
+    .reset         = NULL,
+    { .available = mach64vt2_available },
+    .speed_changed = mach64_speed_changed,
+    .force_redraw  = mach64_force_redraw,
+    .config        = mach64vt2_config
+};
+
+const device_t mach64vt2_onboard_device = {
+    .name          = "ATI Mach64VT2 (On-board)",
+    .internal_name = "mach64vt2",
+    .flags         = DEVICE_PCI,
+    .local         = 1,
     .init          = mach64vt2_init,
     .close         = mach64_close,
     .reset         = NULL,

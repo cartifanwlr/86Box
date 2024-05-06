@@ -108,13 +108,13 @@
 #include <86box/pit.h>
 #include <86box/pit_fast.h>
 #include <86box/rom.h>
+#include <86box/scsi_device.h>
 #include <86box/scsi_ncr5380.h>
-#include <86box/scsi_ncr53c400.h>
+#include <86box/scsi_t128.h>
 #include <86box/snd_mpu401.h>
 #include <86box/sound.h>
 #include <86box/snd_opl.h>
 #include <86box/snd_sb.h>
-#include <86box/snd_sb_dsp.h>
 #include <86box/snd_sb_dsp.h>
 
 typedef struct nsc_mixer_t {
@@ -248,7 +248,7 @@ typedef struct pas16_t {
 
     pitf_t * pit;
 
-    ncr53c400_t *scsi;
+    t128_t * scsi;
 
     pc_timer_t scsi_timer;
 } pas16_t;
@@ -549,7 +549,6 @@ static const double lmc1982_att_2dbstep_6bits[] = {
     in said cut in the below values.
  */
 static const double lmc835_att_1dbstep_7bits[128] = {
-                 0.0,
     /* Flat */
     [0x40] =  8230.0,    /*       Flat  */
     /* Boost */
@@ -586,10 +585,10 @@ static const double lmc835_att_1dbstep_7bits[128] = {
     /* The Win95 drivers use D5-D0 = 1D instead of 2D, datasheet erratum? */
     [0x1d] =  7335.0,    /*  1 dB Cut   */
     [0x2f] =  8230.0,    /*       Flat  */
+                 0.0
 };
 
 static const double lmc835_att_05dbstep_7bits[128] = {
-              0.0                               ,
     /* Flat */
     [0x40] =  8230.0,    /*        Flat  */
     /* Boost */
@@ -626,6 +625,7 @@ static const double lmc835_att_05dbstep_7bits[128] = {
     /* The Win95 drivers use D5-D0 = 1D instead of 2D, datasheet erratum? */
     [0x1d] =  7770.0,    /* 0.5 dB Cut   */
     [0x2f] =  8230.0,    /*        Flat  */
+                 0.0
 };
 
 static __inline double
@@ -706,7 +706,6 @@ pas16_in(uint16_t port, void *priv)
 {
     pas16_t *pas16 = (pas16_t *) priv;
     uint8_t  ret   = 0xff;
-    ncr53c400_t *dev = (ncr53c400_t *) pas16->scsi;
 
     port -= pas16->base;
 
@@ -764,10 +763,8 @@ pas16_in(uint16_t port, void *priv)
 
         case 0x1c00 ... 0x1c03:    /* NCR5380 ports 0 to 3. */
         case 0x3c00 ... 0x3c03:    /* NCR5380 ports 4 to 7. */
-            if (pas16->has_scsi) {
-                port = (port & 0x0003) | ((port & 0x2000) >> 11);
-                ret = ncr5380_read(port, &pas16->scsi->ncr);
-            }
+            if (pas16->has_scsi)
+                ret = ncr5380_read((port & 0x0003) | ((port & 0x2000) >> 11), &pas16->scsi->ncr);
             break;
 
         case 0x2401:    /* Board revision */
@@ -783,20 +780,12 @@ pas16_in(uint16_t port, void *priv)
 
         case 0x5c00:
             if (pas16->has_scsi)
-                ret = ncr53c400_simple_read(pas16->scsi);
+                ret = t128_read(0x1e00, pas16->scsi);
             break;
         case 0x5c01:
-            if (pas16->has_scsi) {
-                ret = ((dev->ncr.dma_mode != DMA_IDLE) && !(dev->status_ctrl & STATUS_BUFFER_NOT_READY)) << 7;
-                if (!(ret & 0x80)) {
-                    ncr53c400_callback(pas16->scsi);
-                    if ((dev->ncr.dma_mode != DMA_IDLE) && !(dev->status_ctrl & STATUS_BUFFER_NOT_READY)) {
-                        timer_stop(&pas16->scsi_timer);
-                        pas16->timeout_status &= 0x7f;
-                    }
-
-                }
-            }
+            if (pas16->has_scsi)
+                /* Bits 0-6 must absolutely be set for SCSI hard disk drivers to work. */
+                ret = (((pas16->scsi->ncr.dma_mode != DMA_IDLE) && (pas16->scsi->status & 0x04)) << 7) | 0x7f;
             break;
         case 0x5c03:
             if (pas16->has_scsi)
@@ -1189,6 +1178,20 @@ lmc835_update_reg(nsc_mixer_t *mixer)
 }
 
 static void
+pas16_scsi_callback(void *priv)
+{
+    pas16_t *      pas16 = (pas16_t *) priv;
+    t128_t  *      dev   = pas16->scsi;
+
+    t128_callback(pas16->scsi);
+
+    if ((dev->ncr.dma_mode != DMA_IDLE) && (dev->status & 0x04)) {
+        timer_stop(&pas16->scsi_timer);
+        pas16->timeout_status &= 0x7f;
+    }
+}
+
+static void
 pas16_timeout_callback(void *priv)
 {
     pas16_t *      pas16       = (pas16_t *) priv;
@@ -1492,10 +1495,8 @@ pas16_out(uint16_t port, uint8_t val, void *priv)
 
         case 0x1c00 ... 0x1c03:    /* NCR5380 ports 0 to 3. */
         case 0x3c00 ... 0x3c03:    /* NCR5380 ports 4 to 7. */
-            if (pas16->has_scsi) {
-                port = (port & 0x0003) | ((port & 0x2000) >> 11);
-                ncr5380_write(port, val, &pas16->scsi->ncr);
-            }
+            if (pas16->has_scsi)
+                ncr5380_write((port & 0x0003) | ((port & 0x2000) >> 11), val, &pas16->scsi->ncr);
             break;
 
         case 0x4000:
@@ -1517,7 +1518,7 @@ pas16_out(uint16_t port, uint8_t val, void *priv)
 
         case 0x5c00:
             if (pas16->has_scsi)
-                ncr53c400_simple_write(val, pas16->scsi);
+                t128_write(0x1e00, val, pas16->scsi);
             break;
         case 0x5c03:
             if (pas16->has_scsi) {
@@ -1826,7 +1827,7 @@ pas16_pit_timer0(const int new_out, UNUSED(int old_out), void *priv)
         }
 
         if (pas16->ticks) {
-            for (uint8_t i = 0; i < pas16->ticks; i++)
+            for (uint16_t i = 0; i < pas16->ticks; i++)
                 pitf_ctr_clock(pas16->pit, 1);
 
             pas16->ticks = 0;
@@ -1939,18 +1940,13 @@ pasplus_get_buffer(int32_t *buffer, int len, void *priv)
 {
     pas16_t *          pas16   = (pas16_t *) priv;
     const nsc_mixer_t *mixer   = &pas16->nsc_mixer;
-    double             out_l   = 0.0;
-    double             out_r   = 0.0;
     double             bass_treble;
 
     sb_dsp_update(&pas16->dsp);
     pas16_update(pas16);
     for (int c = 0; c < len * 2; c += 2) {
-        out_l = 0.0;
-        out_r = 0.0;
-
-        out_l += pas16->dsp.buffer[c];
-        out_r += pas16->dsp.buffer[c + 1];
+        double out_l = pas16->dsp.buffer[c];
+        double out_r = pas16->dsp.buffer[c + 1];
 
         if (pas16->filter) {
             /* We divide by 3 to get the volume down to normal. */
@@ -2004,16 +2000,11 @@ pasplus_get_music_buffer(int32_t *buffer, int len, void *priv)
     const pas16_t *    pas16   = (const pas16_t *) priv;
     const nsc_mixer_t *mixer   = &pas16->nsc_mixer;
     const int32_t *    opl_buf = pas16->opl.update(pas16->opl.priv);
-    double             out_l   = 0.0;
-    double             out_r   = 0.0;
     double             bass_treble;
 
     for (int c = 0; c < len * 2; c += 2) {
-        out_l = 0.0;
-        out_r = 0.0;
-
-        out_l = (((double) opl_buf[c]) * mixer->fm_l) * 0.7171630859375;
-        out_r = (((double) opl_buf[c + 1]) * mixer->fm_r) * 0.7171630859375;
+        double out_l = (((double) opl_buf[c]) * mixer->fm_l) * 0.7171630859375;
+        double out_r = (((double) opl_buf[c + 1]) * mixer->fm_r) * 0.7171630859375;
 
         /* TODO: recording CD, Mic with AGC or line in. Note: mic volume does not affect recording. */
         out_l *= mixer->master_l;
@@ -2127,18 +2118,13 @@ pas16_get_buffer(int32_t *buffer, int len, void *priv)
 {
     pas16_t *            pas16 =  (pas16_t *) priv;
     const mv508_mixer_t *mixer   = &pas16->mv508_mixer;
-    double               out_l   = 0.0;
-    double               out_r   = 0.0;
     double               bass_treble;
 
     sb_dsp_update(&pas16->dsp);
     pas16_update(pas16);
     for (int c = 0; c < len * 2; c += 2) {
-        out_l = 0.0;
-        out_r = 0.0;
-
-        out_l += (pas16->dsp.buffer[c] * mixer->sb_l) / 3.0;
-        out_r += (pas16->dsp.buffer[c + 1] * mixer->sb_r) / 3.0;
+        double out_l = (pas16->dsp.buffer[c] * mixer->sb_l) / 3.0;
+        double out_r = (pas16->dsp.buffer[c + 1] * mixer->sb_r) / 3.0;
 
         if (pas16->filter) {
             /* We divide by 3 to get the volume down to normal. */
@@ -2192,16 +2178,11 @@ pas16_get_music_buffer(int32_t *buffer, int len, void *priv)
     const pas16_t *      pas16   = (const pas16_t *) priv;
     const mv508_mixer_t *mixer   = &pas16->mv508_mixer;
     const int32_t *      opl_buf = pas16->opl.update(pas16->opl.priv);
-    double               out_l   = 0.0;
-    double               out_r   = 0.0;
     double               bass_treble;
 
     for (int c = 0; c < len * 2; c += 2) {
-        out_l = 0.0;
-        out_r = 0.0;
-
-        out_l = (((double) opl_buf[c]) * mixer->fm_l) * 0.7171630859375;
-        out_r = (((double) opl_buf[c + 1]) * mixer->fm_r) * 0.7171630859375;
+        double out_l = (((double) opl_buf[c]) * mixer->fm_l) * 0.7171630859375;
+        double out_r = (((double) opl_buf[c + 1]) * mixer->fm_r) * 0.7171630859375;
 
         /* TODO: recording CD, Mic with AGC or line in. Note: mic volume does not affect recording. */
         out_l *= mixer->master_l;
@@ -2345,6 +2326,7 @@ pas16_init(const device_t *info)
 
     if (pas16->has_scsi) {
         pas16->scsi = device_add(&scsi_pas_device);
+        timer_add(&pas16->scsi->timer, pas16_scsi_callback, pas16, 0);
         timer_add(&pas16->scsi_timer, pas16_timeout_callback, pas16, 0);
         other_scsi_present++;
     }
